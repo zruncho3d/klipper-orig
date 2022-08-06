@@ -84,9 +84,9 @@ class DualGantryCoreXYKinematics:
             if axis in (0,1):
                 altc = self.dualgantry_active
                 self._activate_gantry(0)
-                self._home_axis(homing_state, axis, self.rails[i])
+                self._home_axis(homing_state, axis, self.rails[axis])
                 self._activate_gantry(1)
-                self._home_axis(homing_state, axis, self.rails[i + 3])
+                self._home_axis(homing_state, axis, self.rails[axis + 3])
                 self._activate_gantry(altc)
             else :
                 self._home_axis(homing_state, axis, self.rails[axis])
@@ -129,16 +129,16 @@ class DualGantryCoreXYKinematics:
             toolhead = self.printer.lookup_object('toolhead')
             toolhead.flush_step_generation()
             # inactivating other rails
-            for r in self.dualgantry_rails[( carriage + 1) % 2];
+            for r in self.dualgantry_rails[( carriage + 1) % 2]:
                 r.set_trapq(None)
             # activating carriage rails
-            rails = self.dualgantry_rails[carrriage]
+            rails = self.dualgantry_rails[carriage]
             pos = toolhead.get_position()
             ranges = [r.get_range() for r in rails]
-            self.axes_min = toolhead.Coord(
-                        *[r[1] for r in ranges], *self.axes_min[2:])
-            self.axes_max = toolhead.Coord(
-                        *[r[0] for r in ranges], *self.axes_max[2:])
+            self.axes_min = toolhead.Coord(ranges[0][0], ranges[1][0],
+                                           self.axes_min[2], self.axes_min[3])
+            self.axes_max = toolhead.Coord(ranges[0][1], ranges[1][1],
+                                           self.axes_max[2], self.axes_max[3])
             for i, r in enumerate(rails):
                 r.set_trapq(toolhead.get_trapq())
                 pos[i] = r.get_commanded_position()
