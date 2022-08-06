@@ -69,23 +69,14 @@ class HomingMove:
                     triggered=True, check_triggered=True):
         # Notify start of homing/probing move
         self.printer.send_event("homing:homing_move_begin", self)
-        self.printer.lookup_object("gcode").respond_info("homing_move_begin")
         # Note start location
         self.toolhead.flush_step_generation()
         kin = self.toolhead.get_kinematics()
-        self.printer.lookup_object("gcode").respond_info(
-            "get_kinematics: %s" % repr(kin))
         kin_spos = {s.get_name(): s.get_commanded_position()
                     for s in kin.get_steppers()}
-        self.printer.lookup_object("gcode").respond_info(
-            "kin_spos: %s" % repr(kin_spos))
         self.stepper_positions = [ StepperPosition(s, name)
                                    for es, name in self.endstops
                                    for s in es.get_steppers() ]
-        self.printer.lookup_object("gcode").respond_info(
-            "stepper_positions: %s" % repr(self.stepper_positions))
-        self.printer.lookup_object("gcode").respond_info(
-            "homing_move_begin")
         # Start endstop checking
         print_time = self.toolhead.get_last_move_time()
         endstop_triggers = []
@@ -95,21 +86,15 @@ class HomingMove:
                                           ENDSTOP_SAMPLE_COUNT, rest_time,
                                           triggered=triggered)
             endstop_triggers.append(wait)
-        self.printer.lookup_object("gcode").respond_info(
-            "endstop_triggers: %s" % repr(endstop_triggers))
         all_endstop_trigger = multi_complete(self.printer, endstop_triggers)
         self.toolhead.dwell(HOMING_START_DELAY)
         # Issue move
-        self.printer.lookup_object("gcode").respond_info(
-            "about to issue move w/ delay: %s" % HOMING_START_DELAY)
         error = None
         try:
             self.toolhead.drip_move(movepos, speed, all_endstop_trigger)
         except self.printer.command_error as e:
             error = "Error during homing move: %s" % (str(e),)
         # Wait for endstops to trigger
-        self.printer.lookup_object("gcode").respond_info(
-            "waiting for endstops to trigger")
         trigger_times = {}
         move_end_print_time = self.toolhead.get_last_move_time()
         for mcu_endstop, name in self.endstops:
@@ -121,8 +106,6 @@ class HomingMove:
             elif check_triggered and error is None:
                 error = "No trigger on %s after full movement" % (name,)
         # Determine stepper halt positions
-        self.printer.lookup_object("gcode").respond_info(
-            "determine stepper halt positions")
         self.toolhead.flush_step_generation()
         for sp in self.stepper_positions:
             tt = trigger_times.get(sp.endstop_name, move_end_print_time)
@@ -146,7 +129,6 @@ class HomingMove:
                 haltpos = self.calc_toolhead_pos(halt_kin_spos, over_steps)
         self.toolhead.set_position(haltpos)
         # Signal homing/probing move complete
-        self.printer.lookup_object("gcode").respond_info("signaling homing/probe move complete")
         try:
             self.printer.send_event("homing:homing_move_end", self)
         except self.printer.command_error as e:
@@ -191,7 +173,6 @@ class Homing:
     def home_rails(self, rails, forcepos, movepos):
         # Notify of upcoming homing operation
         self.printer.send_event("homing:home_rails_begin", self, rails)
-        self.printer.lookup_object("gcode").respond_info("in home_rails")
         # Alter kinematics class to think printer is at forcepos
         homing_axes = [axis for axis in range(3) if forcepos[axis] is not None]
         startpos = self._fill_coord(forcepos)
@@ -199,12 +180,8 @@ class Homing:
         self.toolhead.set_position(startpos, homing_axes=homing_axes)
         # Perform first home
         endstops = [es for rail in rails for es in rail.get_endstops()]
-        self.printer.lookup_object("gcode").respond_info("endstops: %s" % repr(endstops))
         hi = rails[0].get_homing_info()
-        self.printer.lookup_object("gcode").respond_info("hi: %s" % repr(hi))
-        self.printer.lookup_object("gcode").respond_info("about to do a HomingMove")
         hmove = HomingMove(self.printer, endstops)
-        self.printer.lookup_object("gcode").respond_info("homepos: %s, speed: %s" % (homepos, hi.speed))
         hmove.homing_move(homepos, hi.speed)
         # Perform second home
         if hi.retract_dist:

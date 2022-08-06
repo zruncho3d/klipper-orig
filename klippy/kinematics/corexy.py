@@ -139,23 +139,16 @@ class CoreXYKinematics:
     # Helper, taken from hybrid_corexy.py
     def _home_axis(self, homing_state, axis, rail):
         position_min, position_max = rail.get_range()
-        self.printer.lookup_object('gcode').respond_info("min, max: %s, %s" %
-            (position_min, position_max))
         hi = rail.get_homing_info()
-        self.printer.lookup_object('gcode').respond_info("hi: %s" % repr(hi))
         homepos = [None, None, None, None]
         homepos[axis] = hi.position_endstop
         forcepos = list(homepos)
-        self.printer.lookup_object('gcode').respond_info("homepos: %s" % homepos)
         if hi.positive_dir:
             forcepos[axis] -= 1.5 * (hi.position_endstop - position_min)
         else:
             forcepos[axis] += 1.5 * (position_max - hi.position_endstop)
         # Perform homing
         self.printer.lookup_object('gcode').respond_info("performing homing")
-        self.printer.lookup_object('gcode').respond_info(
-            "homing with rail: %s, forcepos: %s, homepos: %s" % (rail, forcepos, homepos)
-        )
         homing_state.home_rails([rail], forcepos, homepos)
 
     # Mod from hybrid_corexy.py
@@ -174,8 +167,7 @@ class CoreXYKinematics:
                     "About to home right-side X")
                 self.dg_module.toggle_active_dg_rails(1)
                 self.printer.lookup_object('gcode').respond_info("about to home axis")
-                self._home_axis(homing_state, axis, self.rails[0]) # ?
-                self.printer.lookup_object('gcode').respond_info("finished homing x")
+                self._home_axis(homing_state, axis, self.rails[3]) # ?
                 #self.dg_module.restore_dg_state()
                 # Tircown says: may have issue with dg.state(): will end with wrong carriage active!
                 # T0, then no save/restore, can have T1 active at end
