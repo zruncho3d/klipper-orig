@@ -26,19 +26,18 @@ class DualGantryCoreXYKinematics:
         self.rails[2].setup_itersolve('cartesian_stepper_alloc', b'z')
         self.rails[3].setup_itersolve('corexy_stepper_alloc', b'+')
         self.rails[4].setup_itersolve('corexy_stepper_alloc', b'-')
-        for s in self.get_steppers():
-            s.set_trapq(toolhead.get_trapq())
-            toolhead.register_step_generator(s.generate_steps)
+        for i, r in enumerate(self.rails):
+            for s in r.get_steppers():
+                if i in range(3):
+                    s.set_trapq(toolhead.get_trapq())
+                toolhead.register_step_generator(s.generate_steps)
         config.get_printer().register_event_handler("stepper_enable:motor_off",
                                                     self._motor_off)
-        self.rails[3].set_trapq(None)
-        self.rails[4].set_trapq(None)
-        self.dualgantry_rails = ( (self.rails[0], self.rails[1]),
-                                  (self.rails[3], self.rails[4]) )
-        self.active_carriage = 0
         ranges = [r.get_range() for r in self.rails]
-        self.axes_min = toolhead.Coord(*[r[0] for r in ranges[:3]], e=0.)
-        self.axes_max = toolhead.Coord(*[r[1] for r in ranges[:3]], e=0.)
+        self.axes_min = toolhead.Coord( min(ranges[0][0], ranges[3][0]),
+                    min(ranges[1][0], ranges[4][0]), ranges[2][0])
+        self.axes_max = toolhead.Coord( max(ranges[0][1], ranges[3][1]),
+                    max(ranges[1][1], ranges[4][1]), ranges[2][1])
         # Setup boundary checks
         max_velocity, max_accel = toolhead.get_max_velocity()
         self.max_z_velocity = config.getfloat(
@@ -46,18 +45,17 @@ class DualGantryCoreXYKinematics:
         self.max_z_accel = config.getfloat(
             'max_z_accel', max_accel, above=0., maxval=max_accel)
         self.limits = [(1.0, -1.0)] * 3
+        self.active_carriage = self.last_inactive_position = None
         self.printer.lookup_object('gcode').register_command(
                 'SET_DUAL_CARRIAGE', self.cmd_SET_DUAL_CARRIAGE,
                 desc=self.cmd_SET_DUAL_CARRIAGE_help)
-        self.last_inactive_xy_position = None # (x, y)
-
     def get_steppers(self):
         return [s for rail in self.rails for s in rail.get_steppers()]
     def calc_position(self, stepper_positions):
-        pos = [stepper_positions[rail.get_name()] for rail in self.rails]
+        pos = [stepper_positions[rail.get_name()] for rail in self.rails[:3]]
         return [0.5 * (pos[0] + pos[1]), 0.5 * (pos[0] - pos[1]), pos[2]]
     def set_position(self, newpos, homing_axes):
-        for i, rail in enumerate(self.rails):
+        for i, rail in enumerate(self.rails[:3]):
             rail.set_position(newpos)
             if i in homing_axes:
                 self.limits[i] = rail.get_range()
@@ -76,14 +74,13 @@ class DualGantryCoreXYKinematics:
             forcepos[axis] += 1.5 * (position_max - hi.position_endstop)
         # Perform homing
         homing_state.home_rails([rail], forcepos, homepos)
-    def home(self, homing_state): 
+    def home(self, homing_state):
         for axis in homing_state.get_axes():
             if axis in (0, 1):
                 altc = self.active_carriage
-                self._activate_gantry(0)
-                self._home_axis(homing_state, axis, self.rails[axis])
-                self._activate_gantry(1)
-                self._home_axis(homing_state, axis, self.rails[axis])
+                for i in [0,1]:
+                    self._activate_gantry(i)
+                    self._home_axis(homing_state, axis, self.rails[axis])
                 self._activate_gantry(altc)
             else:
                 self._home_axis(homing_state, axis, self.rails[axis])
@@ -114,44 +111,35 @@ class DualGantryCoreXYKinematics:
             self.max_z_velocity * z_ratio, self.max_z_accel * z_ratio)
     def get_status(self, eventtime):
         axes = [a for a, (l, h) in zip("xyz", self.limits) if l <= h]
-        active_carriage = ('CARRIAGE_0','CARRIAGE_1')[self.active_carriage]
         return {
             'homed_axes': "".join(axes),
             'axis_minimum': self.axes_min,
             'axis_maximum': self.axes_max,
-            'mode': ['FULL_CONTROL', active_carriage]
+            'dual_carriage': { 
+                'mode': 'FULL_CONTROL',
+                'actuator_carriage': self.active_carriage,
+                'active_carriages': [self.active_carriage]
+            }
         }
     def _activate_gantry(self, carriage):
-        if self.active_carriage != carriage:
-            toolhead = self.printer.lookup_object('toolhead')
-            toolhead.flush_step_generation()
-            # Inactivate other rails
-            if self.last_inactive_xy_position is None:
-                xy_position_to_restore = toolhead.get_position()[:2]
-            else:
-                xy_position_to_restore = self.last_inactive_xy_position
-            for i, r in enumerate( self.dualgantry_rails[( carriage + 1) % 2]):
-                r.set_trapq(None)
-                self.rails[i + 3] = r
-                # Save position value for a future toolchange
-                self.last_inactive_xy_position = toolhead.get_position()[:2]
-            # Activate carriage rails
-            rails = self.dualgantry_rails[carriage]
-            ranges = [r.get_range() for r in rails]
-            self.axes_min = toolhead.Coord(ranges[0][0], ranges[1][0],
-                                           self.axes_min[2], self.axes_min[3])
-            self.axes_max = toolhead.Coord(ranges[0][1], ranges[1][1],
-                                           self.axes_max[2], self.axes_max[3])
-            for i, r in enumerate(rails):
-                r.set_trapq(toolhead.get_trapq())
-                self.rails[i] = r
-            pos = toolhead.get_position()
-            for i, r in enumerate(rails):
-                if self.limits[i][0] <= self.limits[i][1]:
-                    self.limits[i] = ranges[i]
-                pos[i] = xy_position_to_restore[i]
-            toolhead.set_position(pos)
-            self.active_carriage = carriage
+        if self.active_carriage == carriage:
+            return
+        toolhead = self.printer.lookup_object('toolhead')
+        toolhead.flush_step_generation()
+        pos = toolhead.get_position()
+        _restore_position = self.last_inactive_position or pos
+        self.last_inactive_position = pos
+        self.rails[0], self.rails[3] = self.rails[3], self.rails[0]
+        self.rails[1], self.rails[4] = self.rails[4], self.rails[1]
+        self.rails[3].set_trapq(None)
+        self.rails[4].set_trapq(None)
+        for i in range(2):
+            self.rails[i].set_trapq(toolhead.get_trapq())
+            pos[i] = _restore_position[i]
+            if self.limits[i][0] <= self.limits[i][1]:
+                self.limits[i] = self.rails[i].get_range()[i]
+        toolhead.set_position(pos)
+        self.active_carriage = carriage
     cmd_SET_DUAL_CARRIAGE_help = "Set which carriage is active"
     def cmd_SET_DUAL_CARRIAGE(self, gcmd):
         carriage = gcmd.get_int('CARRIAGE', minval=0, maxval=1)
