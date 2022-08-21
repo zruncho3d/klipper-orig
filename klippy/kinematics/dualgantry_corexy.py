@@ -28,7 +28,7 @@ class DualGantryCoreXYKinematics:
         self.rails[4].setup_itersolve('corexy_stepper_alloc', b'-')
         for i, r in enumerate(self.rails):
             for s in r.get_steppers():
-                if i in range(3):
+                if i < 3:
                     s.set_trapq(toolhead.get_trapq())
                 toolhead.register_step_generator(s.generate_steps)
         config.get_printer().register_event_handler("stepper_enable:motor_off",
@@ -131,8 +131,8 @@ class DualGantryCoreXYKinematics:
         self.last_inactive_position = pos
         self.rails[0], self.rails[3] = self.rails[3], self.rails[0]
         self.rails[1], self.rails[4] = self.rails[4], self.rails[1]
-        self.rails[3].set_trapq(None)
-        self.rails[4].set_trapq(None)
+        for r in [self.rails[3], self.rails[4]]:
+            r.set_trapq(None)
         for i in range(2):
             self.rails[i].set_trapq(toolhead.get_trapq())
             pos[i] = _restore_position[i]
