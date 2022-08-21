@@ -1,6 +1,7 @@
 # Code for handling the kinematics of corexy robots
 #
-# Copyright (C) 2022  Zruncho3D <zruncho3d@gmail.com>
+# Copyright (C) 2022 Zruncho3D <zruncho3d@gmail.com>
+# Copyright (C) 2022 Fabrice Gallet <tircown@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging, math
@@ -9,7 +10,7 @@ import stepper
 class DualGantryCoreXYKinematics:
     def __init__(self, toolhead, config):
         self.printer = config.get_printer()
-          # Setup axis rails
+        # Setup axis rails
         self.rails = [stepper.LookupMultiRail(config.getsection('stepper_' + n))
                       for n in 'xyzuv']
         for s in self.rails[1].get_steppers():
@@ -48,8 +49,6 @@ class DualGantryCoreXYKinematics:
         self.printer.lookup_object('gcode').register_command(
                 'SET_DUAL_CARRIAGE', self.cmd_SET_DUAL_CARRIAGE,
                 desc=self.cmd_SET_DUAL_CARRIAGE_help)
-        for i, rail in enumerate(self.rails):
-            self.printer.lookup_object('gcode').respond_info("initialized rail %i to %s" % (i, repr(rail)))
         self.last_inactive_xy_position = None # (x, y)
 
     def get_steppers(self):
@@ -76,24 +75,23 @@ class DualGantryCoreXYKinematics:
         else:
             forcepos[axis] += 1.5 * (position_max - hi.position_endstop)
         # Perform homing
-        self.printer.lookup_object('gcode').respond_info("performing homing")
         homing_state.home_rails([rail], forcepos, homepos)
     def home(self, homing_state): 
         for axis in homing_state.get_axes():
-            if axis in (0,1):
+            if axis in (0, 1):
                 altc = self.dualgantry_active
                 self._activate_gantry(0)
                 self._home_axis(homing_state, axis, self.rails[axis])
                 self._activate_gantry(1)
                 self._home_axis(homing_state, axis, self.rails[axis])
                 self._activate_gantry(altc)
-            else :
+            else:
                 self._home_axis(homing_state, axis, self.rails[axis])
     def _motor_off(self, print_time):
         self.limits = [(1.0, -1.0)] * 3
     def _check_endstops(self, move):
         end_pos = move.end_pos
-        for i in (0, 1, 2):
+        for i in range(3):
             if (move.axes_d[i]
                 and (end_pos[i] < self.limits[i][0]
                      or end_pos[i] > self.limits[i][1])):
@@ -121,17 +119,13 @@ class DualGantryCoreXYKinematics:
             'homed_axes': "".join(axes),
             'axis_minimum': self.axes_min,
             'axis_maximum': self.axes_max,
-            'mode': ['FULL_CONTROL',active_carriage]
+            'mode': ['FULL_CONTROL', active_carriage]
         }
     def _activate_gantry(self, carriage):
-        self.printer.lookup_object('gcode').respond_info("rails: %s" % repr(self.rails))
-        print_positions = [r.get_commanded_position() for r in self.rails][:5]
-        for print_position in print_positions:
-            self.printer.lookup_object('gcode').respond_info("railscommanded pos : %s" % repr(print_position))
         if self.dualgantry_active != carriage:
             toolhead = self.printer.lookup_object('toolhead')
             toolhead.flush_step_generation()
-            # inactivating other rails
+            # inactivate other rails
             if self.last_inactive_xy_position is None:
                 xy_position_to_restore = toolhead.get_position()[:2]
             else:
@@ -139,11 +133,9 @@ class DualGantryCoreXYKinematics:
             for i, r in enumerate( self.dualgantry_rails[( carriage + 1) % 2]):
                 r.set_trapq(None)
                 self.rails[i + 3] = r
-                # save position value for later activation
+                # save position value for a future toolchange
                 self.last_inactive_xy_position = toolhead.get_position()[:2]
-                self.printer.lookup_object('gcode').respond_info("set last_inactive_xy_position: %s" % repr(self.last_inactive_xy_position))
-
-            # activating carriage rails
+            # activate carriage rails
             rails = self.dualgantry_rails[carriage]
             ranges = [r.get_range() for r in rails]
             self.axes_min = toolhead.Coord(ranges[0][0], ranges[1][0],
@@ -154,13 +146,10 @@ class DualGantryCoreXYKinematics:
                 r.set_trapq(toolhead.get_trapq())
                 self.rails[i] = r
             pos = toolhead.get_position()
-            self.printer.lookup_object('gcode').respond_info("got toolhead position before update: %s" % repr(pos))
             for i, r in enumerate(rails):
                 if self.limits[i][0] <= self.limits[i][1]:
                     self.limits[i] = ranges[i]
-                #pos[i] = r.get_commanded_position()
                 pos[i] = xy_position_to_restore[i]
-            self.printer.lookup_object('gcode').respond_info("setting toolhead position after update: %s" % repr(pos))
             toolhead.set_position(pos)
             self.dualgantry_active = carriage
     cmd_SET_DUAL_CARRIAGE_help = "Set which carriage is active"
