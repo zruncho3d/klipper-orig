@@ -25,9 +25,9 @@ class DualGantryCoreXYKinematics:
         self.rails[2].setup_itersolve('cartesian_stepper_alloc', b'z')
         self.rails[3].setup_itersolve('corexy_stepper_alloc', b'+')
         self.rails[4].setup_itersolve('corexy_stepper_alloc', b'-')
-        for n, r in enumerate(self.rails):
+        for i, r in enumerate(self.rails):
             for s in r.get_steppers():
-                if n < 3:
+                if i < 3:
                     s.set_trapq(toolhead.get_trapq())
                 toolhead.register_step_generator(s.generate_steps)
         config.get_printer().register_event_handler("stepper_enable:motor_off",
@@ -77,8 +77,8 @@ class DualGantryCoreXYKinematics:
         for axis in homing_state.get_axes():
             if axis in (0, 1):
                 altc = self.active_carriage
-                for i in [0, 1]:
-                    self._activate_gantry(0)
+                for i in [0,1]:
+                    self._activate_gantry(i)
                     self._home_axis(homing_state, axis, self.rails[axis])
                 self._activate_gantry(altc)
             else:
@@ -87,7 +87,7 @@ class DualGantryCoreXYKinematics:
         self.limits = [(1.0, -1.0)] * 3
     def _check_endstops(self, move):
         end_pos = move.end_pos
-        for i in (0, 1, 2):
+        for i in range(3):
             if (move.axes_d[i]
                 and (end_pos[i] < self.limits[i][0]
                      or end_pos[i] > self.limits[i][1])):
@@ -132,11 +132,11 @@ class DualGantryCoreXYKinematics:
         self.rails[1], self.rails[4] = self.rails[4], self.rails[1]
         for r in [self.rails[3], self.rails[4]]:
             r.set_trapq(None)
-        for i, r in enumerate([self.rails[0], self.rails[1]]):
-            r.set_trapq(toolhead.get_trapq())
+        for i in range(2):
+            self.rails[i].set_trapq(toolhead.get_trapq())
             pos[i] = _restore_position[i]
             if self.limits[i][0] <= self.limits[i][1]:
-                self.limits[i] = r.get_range()[i]
+                self.limits[i] = self.rails[i].get_range()[i]
         toolhead.set_position(pos)
         self.active_carriage = carriage
     cmd_SET_DUAL_CARRIAGE_help = "Set which carriage is active"
